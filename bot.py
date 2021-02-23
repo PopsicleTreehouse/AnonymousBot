@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-from discord.ext.commands import MemberConverter
 from dotenv import load_dotenv
 from os import getenv
 
@@ -9,22 +8,39 @@ bot = commands.Bot(command_prefix="anon-")
 
 @bot.event
 async def on_ready():
-    await bot.change_presence(activity=discord.Game(name="anon-help"))
+    await bot.change_presence(activity=discord.Game(name=bot.command_prefix+"help"))
 
 
-try:
-    @bot.command(name="dm", brief="Anonymously dms user\n (make sure you don't ping them but use their tag!)")
-    async def dm(ctx, user, *, message=None):
-        await ctx.message.delete()
-        converter = MemberConverter()
-        address = await converter.convert(ctx, user)
-        if(message is None):
-            await ctx.send("Enter a message to send to this user!")
-            return
-        msg = await address.send("**An anonymous user sent you this:** "+message)
-        await msg.add_reaction("\U0001F5D1")
-except discord.ext.commands.errors.UserNotFound:
-    print("This doesn't even fucking work since it's a coroutine")
+@bot.event
+async def on_raw_reaction_add(payload):
+    if(payload.user_id == bot.user.id):
+        return
+    if(not payload.guild_id and str(payload.emoji) == "\U0001F5D1"):
+        msgChannel = await bot.fetch_channel(
+            payload.channel_id)
+        deletedMsg = await msgChannel.fetch_message(payload.message_id)
+        await deletedMsg.delete()
+
+
+@bot.event
+async def on_command_error(ctx, error):
+    await ctx.message.delete()
+    if(isinstance(error, discord.ext.commands.errors.MissingRequiredArgument)):
+        await ctx.message.author.send("Enter a user!")
+    elif(isinstance(error, discord.errors.Forbidden)):
+        await ctx.message.author.send("Type your command into a valid text channel!")
+
+
+@bot.command(name="dm", brief="Anonymously dms user")
+async def dm(ctx, user: discord.User, *, message=None):
+    if(message is None):
+        await ctx.message.author.send("Enter a message to send to " + user.display_name)
+        return
+    successMsg = await ctx.message.author.send("Successfully sent **" + user.display_name + ":** \"" + message + "\"")
+    await successMsg.add_reaction("\U0001F5D1")
+    msg = await user.send("**An anonymous user sent you this:** "+message)
+    await msg.add_reaction("\U0001F5D1")
+    await ctx.message.delete()
 
 load_dotenv()
 bot.run(getenv('TOKEN'))
